@@ -1,68 +1,100 @@
 import { formatMoney } from "./budget.js";
 
 /**
- * Lightweight responsive bar chart (pure divs, no chart lib).
+ * Polished SVG trend chart. Rounded-top bars (rx=4), red when over budget,
+ * a dashed reference line (e.g. avg/day in week view), muted x-axis labels,
+ * and a subtle hover fade. Built with raw SVG — no charting library.
  * `data` = { buckets: [{label, spent, allowance?, over?}], refLine?, refLabel? }
- * Over-budget bars render red; an optional dashed reference line marks a target.
  */
 export default function HistoryChart({ data, symbol }) {
   const { buckets, refLine, refLabel } = data;
-  const H = 160;
+
+  const VBW = 340;
+  const VBH = 170;
+  const TOP = 10;
+  const AXIS = 24;
+  const chartH = VBH - TOP - AXIS;
+
   const max = Math.max(
     1,
     ...buckets.map((b) => Math.max(b.spent, b.allowance || 0)),
     refLine || 0
   );
-  // Thin out x-labels when there are many bars.
-  const step = buckets.length > 8 ? Math.ceil(buckets.length / 8) : 1;
+  const n = buckets.length || 1;
+  const slot = VBW / n;
+  const bw = Math.min(slot * 0.6, 26);
+  const step = n > 8 ? Math.ceil(n / 8) : 1;
+  const refY = refLine != null ? TOP + chartH - (refLine / max) * chartH : null;
 
   return (
-    <div>
-      <div className="relative" style={{ height: H }}>
-        {refLine != null && (
-          <div
-            className="absolute left-0 right-0 flex items-center"
-            style={{ bottom: (refLine / max) * H }}
-          >
-            <div className="h-px flex-1 border-t border-dashed border-gray-400/70" />
-            {refLabel && (
-              <span className="ml-1 text-[9px] text-gray-400 whitespace-nowrap">
-                {refLabel}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="flex h-full items-end gap-1">
-          {buckets.map((b, i) => (
-            <div
-              key={i}
-              className="flex h-full flex-1 flex-col justify-end items-center"
-              title={`${b.label}: ${formatMoney(b.spent, symbol)}${
-                b.allowance != null ? ` of ${formatMoney(b.allowance, symbol)}` : ""
-              }`}
+    <svg
+      viewBox={`0 0 ${VBW} ${VBH}`}
+      width="100%"
+      className="overflow-visible"
+      role="img"
+      aria-label="Spending over time"
+    >
+      {/* Reference line (e.g. daily target) */}
+      {refY != null && (
+        <>
+          <line
+            x1="0"
+            x2={VBW}
+            y1={refY}
+            y2={refY}
+            className="stroke-gray-300 dark:stroke-gray-700"
+            strokeWidth="1"
+            strokeDasharray="3 4"
+          />
+          {refLabel && (
+            <text
+              x={VBW}
+              y={refY - 4}
+              textAnchor="end"
+              className="fill-gray-400"
+              style={{ fontSize: 8 }}
             >
-              <div
-                className="w-full rounded-t"
-                style={{
-                  height: Math.max((b.spent / max) * H, b.spent > 0 ? 3 : 0),
-                  backgroundColor: b.over ? "#E5484D" : "#5B8C5A",
-                  transition: "height .4s ease",
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="mt-1 flex gap-1">
-        {buckets.map((b, i) => (
-          <div
-            key={i}
-            className="flex-1 truncate text-center text-[10px] text-gray-400"
-          >
-            {i % step === 0 ? b.label : ""}
-          </div>
-        ))}
-      </div>
-    </div>
+              {refLabel}
+            </text>
+          )}
+        </>
+      )}
+
+      {buckets.map((b, i) => {
+        const x = i * slot + (slot - bw) / 2;
+        const barH = Math.max((b.spent / max) * chartH, b.spent > 0 ? 3 : 0);
+        const y = TOP + chartH - barH;
+        const fill = b.over ? "#E5484D" : "#5B8C5A";
+        return (
+          <g key={i} className="transition-opacity duration-200 hover:opacity-70">
+            <title>
+              {b.label}: {formatMoney(b.spent, symbol)}
+              {b.allowance != null ? ` of ${formatMoney(b.allowance, symbol)}` : ""}
+            </title>
+            {/* baseline ghost so very small bars still read as a pill */}
+            <rect
+              x={x}
+              y={TOP + chartH - 3}
+              width={bw}
+              height={3}
+              rx={1.5}
+              className="fill-gray-100 dark:fill-gray-800"
+            />
+            <rect x={x} y={y} width={bw} height={barH} rx={4} fill={fill} />
+            {i % step === 0 && (
+              <text
+                x={x + bw / 2}
+                y={VBH - 8}
+                textAnchor="middle"
+                className="fill-gray-400"
+                style={{ fontSize: 9 }}
+              >
+                {b.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
   );
 }

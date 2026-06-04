@@ -1,26 +1,34 @@
+import { useEffect, useState } from "react";
 import { ringColor } from "./budget.js";
 
 /**
- * Circular SVG progress ring.
- * - `pct` 0..1+ (clamped visually to 1). Color shifts green -> amber -> red.
- * - children render in the center (the big remaining-amount typography).
+ * Hero progress ring. Animates the stroke from empty to its target on mount
+ * and on any state change (transition-all duration-700 ease-out).
+ * Color: matcha (safe) -> amber (>=80%) -> red (over). Children render centered.
  */
 export default function ProgressRing({
   pct,
   isOver = false,
-  size = 220,
-  stroke = 18,
+  size = 240,
+  stroke = 22,
   children,
 }) {
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const filled = isOver ? 1 : Math.min(Math.max(pct, 0), 1);
-  const offset = circumference * (1 - filled);
+  const target = isOver ? 1 : Math.min(Math.max(pct, 0), 1);
   const color = ringColor(pct, isOver);
+
+  // Animate in: start empty, then ease to target on the next frame.
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setProgress(target));
+    return () => cancelAnimationFrame(id);
+  }, [target]);
+  const offset = circumference * (1 - progress);
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
         {/* Track */}
         <circle
           cx={size / 2}
@@ -28,7 +36,7 @@ export default function ProgressRing({
           r={radius}
           fill="none"
           strokeWidth={stroke}
-          className="stroke-gray-200 dark:stroke-white/10"
+          className="stroke-gray-200/80 dark:stroke-gray-800"
         />
         {/* Progress */}
         <circle
@@ -41,10 +49,11 @@ export default function ProgressRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 500ms ease, stroke 300ms ease" }}
+          className="transition-all duration-700 ease-out"
+          style={{ filter: "drop-shadow(0 3px 8px rgba(0,0,0,0.10))" }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
         {children}
       </div>
     </div>

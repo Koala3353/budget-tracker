@@ -251,6 +251,7 @@ export default function App() {
             weekOverrides={weekOverrides}
             onSetWeekAllowance={setWeekAllowance}
             onAdd={() => setView("add")}
+            onViewAll={() => setView("history")}
           />
         )}
         {view === "history" && (
