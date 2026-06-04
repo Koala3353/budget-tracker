@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { parseAmount, formatMoney, computeTotals } from "./budget.js";
+import {
+  parseAmount,
+  formatMoney,
+  computeTotals,
+  getWeekRange,
+  weekTransactions,
+  weekKey,
+  getAllowanceForWeek,
+} from "./budget.js";
 import { ChartIcon } from "./icons.jsx";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
@@ -15,6 +23,7 @@ export default function QuickAdd({
   categories,
   transactions,
   settings,
+  weekOverrides = {},
   onAdd,
   onGoDashboard,
 }) {
@@ -26,7 +35,11 @@ export default function QuickAdd({
   const cents = parseAmount(amountStr);
   const canSave = cents > 0 && categoryId != null;
 
-  const { remaining, isOver } = computeTotals(transactions, settings.weeklyAllowance);
+  // Banner reflects the CURRENT week only (filtered by date), honoring overrides.
+  const now = Date.now();
+  const range = getWeekRange(now, settings.weekStartDay);
+  const allowance = getAllowanceForWeek(weekKey(now, settings.weekStartDay), settings, weekOverrides);
+  const { remaining, isOver } = computeTotals(weekTransactions(transactions, range), allowance);
 
   function press(k) {
     setAmountStr((prev) => {

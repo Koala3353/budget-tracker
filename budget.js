@@ -1,13 +1,11 @@
 // ---------------------------------------------------------------------------
-// Pure helpers for money math, parsing, and weekly budget derivation.
-// Money is stored as INTEGER centavos (e.g. ₱123.45 -> 12345) to avoid float
-// drift. Format only at render time.
+// Pure helpers: money math, parsing, week boundaries, weekly budgets, and
+// historical aggregation. Money is stored as INTEGER centavos.
 // ---------------------------------------------------------------------------
 
 export const MAX_CENTAVOS = 999999999; // ₱9,999,999.99 cap
+const DAY = 86400000;
 
-/** Format integer centavos as a display string with thousands separators.
- *  Drops the decimals when the value is a whole peso (₱350 not ₱350.00). */
 export function formatMoney(centavos, symbol = "₱") {
   const negative = centavos < 0;
   const abs = Math.abs(centavos);
@@ -18,35 +16,65 @@ export function formatMoney(centavos, symbol = "₱") {
   return `${negative ? "-" : ""}${symbol}${body}`;
 }
 
-/** Parse a keypad/input string ("350", "12.5", "12.34") into integer centavos.
- *  Truncates (clamps) to 2 decimals, rejects invalid input, caps at MAX. */
 export function parseAmount(str) {
   if (str == null) return 0;
   const s = String(str).trim();
   if (s === "" || s === ".") return 0;
-  if (!/^\d*\.?\d*$/.test(s)) return 0; // digits + optional single dot only
+  if (!/^\d*\.?\d*$/.test(s)) return 0;
   const [intPart = "0", decPartRaw = ""] = s.split(".");
-  const decPart = decPartRaw.slice(0, 2).padEnd(2, "0"); // truncate, not round
+  const decPart = decPartRaw.slice(0, 2).padEnd(2, "0");
   const cents = parseInt(intPart || "0", 10) * 100 + parseInt(decPart || "0", 10);
   if (!Number.isFinite(cents) || cents < 0) return 0;
   return Math.min(cents, MAX_CENTAVOS);
 }
 
-/** Totals for the current week. */
+// --- Week boundaries (local time, DST-safe via Date.setDate) ---------------
+
+function startOfDay(ts) {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** {start,end} epoch ms for the week containing `ts`. end is exclusive. */
+export function getWeekRange(ts, weekStartDay = 1) {
+  const d = startOfDay(ts);
+  const delta = (d.getDay() - weekStartDay + 7) % 7;
+  const start = new Date(d);
+  start.setDate(d.getDate() - delta);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { start: start.getTime(), end: end.getTime() };
+}
+
+/** Stable key (YYYY-MM-DD of the week's start) used to store per-week budgets. */
+export function weekKey(ts, weekStartDay = 1) {
+  const { start } = getWeekRange(ts, weekStartDay);
+  const d = new Date(start);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+/** Allowance for a given week: the per-week override if set, else the default. */
+export function getAllowanceForWeek(key, settings, weekOverrides) {
+  if (weekOverrides && weekOverrides[key] != null) return weekOverrides[key];
+  return settings.weeklyAllowance;
+}
+
+export function weekTransactions(transactions, range) {
+  return transactions.filter((t) => t.ts >= range.start && t.ts < range.end);
+}
+
+// --- Totals & breakdown ----------------------------------------------------
+
 export function computeTotals(transactions, allowance) {
   const spent = transactions.reduce((sum, t) => sum + t.amount, 0);
   const remaining = allowance - spent;
-  const pct = allowance > 0 ? spent / allowance : 0; // guard divide-by-zero
-  return {
-    spent,
-    allowance,
-    remaining,
-    pct,
-    isOver: spent > allowance,
-  };
+  const pct = allowance > 0 ? spent / allowance : 0;
+  return { spent, allowance, remaining, pct, isOver: spent > allowance };
 }
 
-/** Per-category sums, sorted high -> low, with the top category surfaced. */
 export function computeCategoryBreakdown(transactions, categories) {
   const byId = new Map();
   for (const t of transactions) {
@@ -82,26 +110,77 @@ export function ringColor(pct, isOver) {
   return "#5B8C5A"; // safe -> matcha
 }
 
-/** "2:30 PM" */
-export function formatTime(ts) {
-  return new Date(ts).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+// --- Historical aggregation for the dashboard charts -----------------------
+// mode: "week" (7 daily bars) | "month" (~5 weekly bars) |
+//       "3m" (~13 weekly bars) | "year" (12 monthly bars)
+export function computeHistory(transactions, mode, settings, weekOverrides, now = Date.now()) {
+  const wsd = settings.weekStartDay;
+  const buckets = [];
+
+  const sumBetween = (start, end) =>
+    transactions.reduce((s, t) => (t.ts >= start && t.ts < end ? s + t.amount : s), 0);
+
+  if (mode === "week") {
+    const { start } = getWeekRange(now, wsd);
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    for (let i = 0; i < 7; i++) {
+      const ds = new Date(start);
+      ds.setDate(new Date(start).getDate() + i);
+      const dStart = ds.getTime();
+      const dEnd = dStart + DAY;
+      buckets.push({ label: names[ds.getDay()], spent: sumBetween(dStart, dEnd), over: false });
+    }
+    const wk = getAllowanceForWeek(weekKey(now, wsd), settings, weekOverrides);
+    return { buckets, refLine: Math.round(wk / 7), refLabel: "avg/day" };
+  }
+
+  if (mode === "month" || mode === "3m") {
+    const weeks = mode === "month" ? 5 : 13;
+    const cur = getWeekRange(now, wsd);
+    for (let i = weeks - 1; i >= 0; i--) {
+      const ws = new Date(cur.start);
+      ws.setDate(new Date(cur.start).getDate() - i * 7);
+      const range = getWeekRange(ws.getTime(), wsd);
+      const spent = sumBetween(range.start, range.end);
+      const allowance = getAllowanceForWeek(weekKey(ws.getTime(), wsd), settings, weekOverrides);
+      const d = new Date(range.start);
+      buckets.push({
+        label: `${d.getMonth() + 1}/${d.getDate()}`,
+        spent,
+        allowance,
+        over: spent > allowance,
+      });
+    }
+    return { buckets, refLine: null };
+  }
+
+  // year: last 12 calendar months
+  const base = new Date(now);
+  for (let i = 11; i >= 0; i--) {
+    const m = new Date(base.getFullYear(), base.getMonth() - i, 1);
+    const mStart = m.getTime();
+    const mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 1).getTime();
+    buckets.push({
+      label: m.toLocaleDateString("en-US", { month: "short" }),
+      spent: sumBetween(mStart, mEnd),
+      over: false,
+    });
+  }
+  return { buckets, refLine: null };
 }
 
-/** Group label for a timestamp: "Today", "Yesterday", or "Monday, Aug 12". */
+// --- Time formatting -------------------------------------------------------
+
+export function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
 export function dayLabel(ts) {
   const d = new Date(ts);
   const now = new Date();
-  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const dayMs = 86400000;
-  const diffDays = Math.round((startOf(now) - startOf(d)) / dayMs);
+  const so = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((so(now) - so(d)) / DAY);
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
-  return d.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
+  return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 }
