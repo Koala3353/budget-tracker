@@ -36,9 +36,6 @@ export default function HistoryChart({ data, symbol }) {
   const ticks = rawTicks.filter(
     (tick, index, arr) => arr.findIndex((t) => t.value === tick.value) === index
   );
-  const labelX = 10;
-  const labelY = TOP + chartH / 2;
-
   return (
     <svg
       viewBox={`0 0 ${VBW} ${VBH}`}
@@ -47,16 +44,6 @@ export default function HistoryChart({ data, symbol }) {
       role="img"
       aria-label="Spending over time"
     >
-      <text
-        x={labelX}
-        y={labelY}
-        textAnchor="middle"
-        className="fill-gray-400"
-        style={{ fontSize: 9 }}
-        transform={`rotate(-90 ${labelX} ${labelY})`}
-      >
-        Spend ({symbol})
-      </text>
       {ticks.map((tick) => (
         <text
           key={tick.value}
