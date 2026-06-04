@@ -1,57 +1,114 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QuickAdd from "./QuickAdd.jsx";
 import Dashboard from "./Dashboard.jsx";
 import History from "./History.jsx";
 import Settings from "./Settings.jsx";
 import BottomNav from "./BottomNav.jsx";
-import {
-  DEFAULT_CATEGORIES,
-  DEFAULT_SETTINGS,
-  DEFAULT_WEEK_OVERRIDES,
-  SEED_TRANSACTIONS,
-} from "./seed.js";
-
-const STORAGE_KEY = "weekly-budget.v1";
+import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS } from "./seed.js";
+import { genHash, getStoredHash, storeHash, loadBudget, saveBudget } from "./store.js";
 
 /**
- * Root component. Strictly client-side — no router lib, no backend.
- * Opens on Quick-Add ("add"); Dashboard reachable from its banner/button + nav.
+ * Root component. Client-side only, but persistence is now in Supabase instead
+ * of localStorage — so the same account works across devices.
  *
- * State is seeded with ~1 year of dummy data so the charts and the over-budget
- * dashboard show immediately. All changes persist to localStorage (guarded).
+ * Auth: no email/password. A random hash identifies the account; it's kept in
+ * localStorage for auto sign-in. Enter an existing hash on another device to
+ * access the same data. Access is scoped server-side by the hash via RPC.
+ *
+ * Data is held as one JSON blob per account ({categories, settings,
+ * transactions, weekOverrides}) and synced (debounced) on every change.
  */
 export default function App() {
   const [view, setView] = useState("add");
+  const [hash, setHash] = useState(null);
+  const [status, setStatus] = useState("loading"); // loading | ready | error
+  const [sync, setSync] = useState("idle"); // idle | saving | saved | error
+
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [transactions, setTransactions] = useState(SEED_TRANSACTIONS);
-  const [weekOverrides, setWeekOverrides] = useState(DEFAULT_WEEK_OVERRIDES);
+  const [transactions, setTransactions] = useState([]);
+  const [weekOverrides, setWeekOverrides] = useState({});
 
-  // To persist real user data across reloads instead of always re-seeding,
-  // uncomment this hydration block:
-  // useEffect(() => {
-  //   try {
-  //     const raw = localStorage.getItem(STORAGE_KEY);
-  //     if (raw) {
-  //       const s = JSON.parse(raw);
-  //       setCategories(s.categories ?? DEFAULT_CATEGORIES);
-  //       setSettings(s.settings ?? DEFAULT_SETTINGS);
-  //       setTransactions(s.transactions ?? []);
-  //       setWeekOverrides(s.weekOverrides ?? {});
-  //     }
-  //   } catch {}
-  // }, []);
+  const loadedRef = useRef(false);
 
-  useEffect(() => {
+  function applyState(data) {
+    setCategories(data.categories || DEFAULT_CATEGORIES);
+    setSettings(data.settings || DEFAULT_SETTINGS);
+    setTransactions(Array.isArray(data.transactions) ? data.transactions : []);
+    setWeekOverrides(data.weekOverrides || {});
+  }
+
+  // Hydrate a hash: load from Supabase, or initialize a fresh account.
+  async function hydrate(h) {
+    loadedRef.current = false;
+    setStatus("loading");
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ version: 2, categories, settings, transactions, weekOverrides })
-      );
-    } catch {
-      /* private mode / quota -> stay in-memory */
+      const data = await loadBudget(h);
+      if (data && data.categories) {
+        applyState(data);
+      } else {
+        const init = {
+          categories: DEFAULT_CATEGORIES,
+          settings: DEFAULT_SETTINGS,
+          transactions: [],
+          weekOverrides: {},
+        };
+        applyState(init);
+        await saveBudget(h, { version: 3, ...init });
+      }
+      loadedRef.current = true;
+      setStatus("ready");
+      setSync("saved");
+    } catch (e) {
+      console.error(e);
+      setStatus("error");
     }
-  }, [categories, settings, transactions, weekOverrides]);
+  }
+
+  // First load: get/create hash and hydrate.
+  useEffect(() => {
+    let h = getStoredHash();
+    if (!h) {
+      h = genHash();
+      storeHash(h);
+    }
+    setHash(h);
+    hydrate(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounced sync to Supabase on any data change (after initial load).
+  useEffect(() => {
+    if (!loadedRef.current || !hash) return;
+    setSync("saving");
+    const t = setTimeout(async () => {
+      try {
+        await saveBudget(hash, { version: 3, categories, settings, transactions, weekOverrides });
+        setSync("saved");
+      } catch (e) {
+        console.error(e);
+        setSync("error");
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [categories, settings, transactions, weekOverrides, hash]);
+
+  // --- Account switching ---
+  function useAccount(rawHash) {
+    const h = (rawHash || "").trim();
+    if (!h) return;
+    storeHash(h);
+    setHash(h);
+    hydrate(h);
+    setView("dashboard");
+  }
+  function newAccount() {
+    const h = genHash();
+    storeHash(h);
+    setHash(h);
+    hydrate(h);
+    setView("add");
+  }
 
   // --- Transactions ---
   function addTransaction({ amount, categoryId, note }) {
@@ -72,7 +129,7 @@ export default function App() {
     setView("add");
   }
 
-  // --- Categories (working CRUD) ---
+  // --- Categories ---
   function addCategory({ name, icon, color }) {
     const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     setCategories((prev) => [...prev, { id, name, icon, color }]);
@@ -82,9 +139,8 @@ export default function App() {
   }
   function deleteCategory(id) {
     setCategories((prev) => {
-      if (prev.length <= 1) return prev; // never delete the last category
+      if (prev.length <= 1) return prev;
       const remaining = prev.filter((c) => c.id !== id);
-      // Reassign any transactions from the deleted category to the first remaining one.
       const fallback = remaining[0].id;
       setTransactions((txs) =>
         txs.map((t) => (t.categoryId === id ? { ...t, categoryId: fallback } : t))
@@ -110,7 +166,7 @@ export default function App() {
   function exportData() {
     try {
       const blob = new Blob(
-        [JSON.stringify({ version: 2, categories, settings, transactions, weekOverrides }, null, 2)],
+        [JSON.stringify({ version: 3, categories, settings, transactions, weekOverrides }, null, 2)],
         { type: "application/json" }
       );
       const url = URL.createObjectURL(blob);
@@ -139,12 +195,39 @@ export default function App() {
           if (Array.isArray(s.transactions)) setTransactions(s.transactions);
           if (s.weekOverrides) setWeekOverrides(s.weekOverrides);
         } catch {
-          /* invalid file -> ignore */
+          /* ignore */
         }
       };
       reader.readAsText(file);
     };
     input.click();
+  }
+
+  // --- Loading / error gates ---
+  if (status !== "ready") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-neutral-900 px-6 text-center">
+        {status === "loading" ? (
+          <div className="flex flex-col items-center gap-3 text-gray-500 dark:text-gray-400">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-matcha border-t-transparent" />
+            <p className="text-sm">Loading your budget…</p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-gray-700 dark:text-gray-200">Couldn't reach your data.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Check your connection — your changes are safe.
+            </p>
+            <button
+              onClick={() => hash && hydrate(hash)}
+              className="rounded-2xl bg-matcha px-5 py-3 font-semibold text-white active:scale-95"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -183,10 +266,14 @@ export default function App() {
           <Settings
             categories={categories}
             settings={settings}
+            hash={hash}
+            sync={sync}
             onUpdateSettings={updateSettings}
             onAddCategory={addCategory}
             onEditCategory={editCategory}
             onDeleteCategory={deleteCategory}
+            onUseAccount={useAccount}
+            onNewAccount={newAccount}
             onExport={exportData}
             onImport={importData}
           />

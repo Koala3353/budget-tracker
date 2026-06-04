@@ -1,29 +1,99 @@
 import { useState } from "react";
 import { parseAmount } from "./budget.js";
 import CategoryEditor from "./CategoryEditor.jsx";
+import Modal from "./Modal.jsx";
 
 const WEEK_DAYS = [
   { value: 0, label: "Sunday" },
   { value: 1, label: "Monday" },
 ];
 
-/** Settings: default weekly allowance, week start, currency, working category CRUD, backups. */
+const SYNC_LABEL = {
+  saving: { text: "Saving…", color: "text-gray-400" },
+  saved: { text: "All changes synced", color: "text-matcha" },
+  error: { text: "Offline — will retry", color: "text-over" },
+  idle: { text: "", color: "text-gray-400" },
+};
+
+/** Settings: account, default weekly allowance, week start, currency, category CRUD, backups. */
 export default function Settings({
   categories,
   settings,
+  hash,
+  sync,
   onUpdateSettings,
   onAddCategory,
   onEditCategory,
   onDeleteCategory,
+  onUseAccount,
+  onNewAccount,
   onExport,
   onImport,
 }) {
   const symbol = settings.currencySymbol;
   const [editing, setEditing] = useState(null); // category object, {} for add, or null
+  const [accountModal, setAccountModal] = useState(null); // "switch" | "new" | null
+  const [copied, setCopied] = useState(false);
+  const [hashInput, setHashInput] = useState("");
+
+  function copyHash() {
+    try {
+      navigator.clipboard.writeText(hash);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
+  }
+
+  const syncInfo = SYNC_LABEL[sync] || SYNC_LABEL.idle;
 
   return (
     <div className="px-4 pt-5 pb-4 space-y-6">
       <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
+
+      <Section title="Account">
+        <div className="rounded-2xl bg-white dark:bg-neutral-800 p-4 shadow-sm">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-300">Your account key</span>
+            {syncInfo.text && (
+              <span className={`text-xs font-medium ${syncInfo.color}`}>{syncInfo.text}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-gray-100 dark:bg-white/5 px-3 py-2 font-mono text-xs text-gray-800 dark:text-gray-100">
+              {hash}
+            </code>
+            <button
+              onClick={copyHash}
+              className="rounded-lg bg-matcha/10 px-3 py-2 text-xs font-semibold text-matcha active:scale-95"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-gray-400">
+            Save this key. Anyone with it can access this account — use it to sign in on another
+            device. There's no password recovery.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setHashInput("");
+                setAccountModal("switch");
+              }}
+              className="rounded-xl bg-gray-100 dark:bg-white/5 py-2.5 text-sm font-semibold text-gray-800 dark:text-gray-100 active:scale-[0.99]"
+            >
+              Use another key
+            </button>
+            <button
+              onClick={() => setAccountModal("new")}
+              className="rounded-xl bg-gray-100 dark:bg-white/5 py-2.5 text-sm font-semibold text-gray-800 dark:text-gray-100 active:scale-[0.99]"
+            >
+              New account
+            </button>
+          </div>
+        </div>
+      </Section>
 
       <Section title="Budget">
         <Field label="Default weekly allowance">
@@ -130,6 +200,61 @@ export default function Settings({
           }}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {accountModal === "switch" && (
+        <Modal title="Use another account" onClose={() => setAccountModal(null)}>
+          <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
+            Paste an account key to load its data on this device.
+          </p>
+          <input
+            autoFocus
+            value={hashInput}
+            onChange={(e) => setHashInput(e.target.value)}
+            placeholder="account key"
+            className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-neutral-900 px-3 py-3 font-mono text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-matcha/40"
+          />
+          <button
+            disabled={!hashInput.trim()}
+            onClick={() => {
+              onUseAccount(hashInput);
+              setAccountModal(null);
+            }}
+            className={`mt-4 w-full rounded-2xl py-3.5 text-base font-semibold transition ${
+              hashInput.trim()
+                ? "bg-matcha text-white active:scale-[0.99]"
+                : "bg-gray-200 dark:bg-white/10 text-gray-400 cursor-not-allowed"
+            }`}
+          >
+            Load account
+          </button>
+        </Modal>
+      )}
+
+      {accountModal === "new" && (
+        <Modal title="Create a new account?" onClose={() => setAccountModal(null)}>
+          <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">
+            This generates a fresh, empty account and switches to it. Your current account isn't
+            deleted — copy its key first if you want to come back to it.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => {
+                onNewAccount();
+                setAccountModal(null);
+              }}
+              className="w-full rounded-2xl bg-matcha py-3.5 text-base font-semibold text-white active:scale-[0.99]"
+            >
+              Create new account
+            </button>
+            <button
+              onClick={() => setAccountModal(null)}
+              className="w-full rounded-2xl py-3 text-base font-medium text-gray-500 dark:text-gray-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
