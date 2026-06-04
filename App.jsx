@@ -10,7 +10,7 @@ import { genHash, getStoredHash, storeHash, loadBudget, saveBudget } from "./sto
 // DEMO_MODE feeds mock data to every screen for UI preview (no Supabase calls).
 // Set to false to run live on Supabase (hash accounts, cloud sync) — all of
 // that logic is preserved below and simply bypassed while demoing.
-const DEMO_MODE = true;
+const DEMO_MODE = false;
 
 /**
  * Root component. Client-side only, but persistence is now in Supabase instead
