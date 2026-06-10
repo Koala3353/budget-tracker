@@ -27,14 +27,14 @@ export default function Welcome({ onSignIn, onCreate, error }) {
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-6 dark:bg-gray-950">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-matcha text-3xl shadow-sm">
-            🍵
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-matcha text-3xl font-bold text-white shadow-sm">
+            ₱
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
-            Weekly Budget
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
+            budge<span className="text-matcha">·</span>
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Track your allowance. No email, no password — just an account key.
+            make it to Friday. No email, no password — just an account key.
           </p>
         </div>
 
