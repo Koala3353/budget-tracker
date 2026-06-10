@@ -74,7 +74,15 @@ export default function Dashboard({
   const defaultSpendDays = settings.spendDaysPerWeek || 7;
   const spendDays = weekSpendDays?.[curKey] ?? defaultSpendDays;
   const hasDaysOverride = weekSpendDays?.[curKey] != null;
-  const dailyLimit = Math.max(0, Math.floor(remaining / Math.max(1, spendDays)));
+
+  // Pace over the spend days STILL LEFT, not the full configured count:
+  // subtract the days already elapsed this week (capped to calendar days left).
+  const todayStart0 = new Date();
+  todayStart0.setHours(0, 0, 0, 0);
+  const daysElapsed = Math.max(0, Math.floor((todayStart0.getTime() - range.start) / DAY));
+  const calDaysLeft = Math.max(1, Math.round((range.end - todayStart0.getTime()) / DAY));
+  const spendDaysLeft = Math.min(calDaysLeft, Math.max(1, spendDays - daysElapsed));
+  const dailyLimit = Math.max(0, Math.floor(remaining / spendDaysLeft));
 
   const streak = computeStreak(transactions, settings, weekOverrides, now);
   const recent = [...transactions].sort((a, b) => b.ts - a.ts).slice(0, 3);
@@ -171,8 +179,8 @@ export default function Dashboard({
                 }`}
               >
                 Daily limit:{" "}
-                <span className="font-bold">{formatMoney(dailyLimit, symbol)}/day</span> over{" "}
-                {spendDays} spend day{spendDays === 1 ? "" : "s"}
+                <span className="font-bold">{formatMoney(dailyLimit, symbol)}/day</span> ·{" "}
+                {spendDaysLeft} spend day{spendDaysLeft === 1 ? "" : "s"} left
               </div>
             )}
           </div>
