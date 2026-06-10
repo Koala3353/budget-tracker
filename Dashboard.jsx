@@ -302,20 +302,36 @@ export default function Dashboard({
         )}
       </section>
 
-      {/* Spend by day (heatmap) */}
+      {/* Spend by day — avg per weekday */}
       <section className={`${card} mb-4 p-5`}>
-        <h2 className="mb-3 text-base font-bold text-gray-900 dark:text-gray-50">Spend by day</h2>
-        <div className="flex items-end justify-between gap-2" style={{ height: 96 }}>
-          {heat.avg.map((v, i) => (
-            <div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
-              <div className="w-full overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800" style={{ height: "100%", display: "flex", alignItems: "flex-end" }}>
-                <div className="w-full rounded-md" style={{ height: `${Math.max((v / heat.max) * 100, v > 0 ? 6 : 0)}%`, backgroundColor: v === heat.max && v > 0 ? "#F59E0B" : "#5B8C5A", transition: "height .4s" }} />
-              </div>
-              <span className="text-[11px] font-medium text-gray-400">{heat.labels[i]}</span>
+        <h2 className="mb-1 text-base font-bold text-gray-900 dark:text-gray-50">Spend by day</h2>
+        <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">Which weekdays you spend the most.</p>
+        {heat.avg.filter((v) => v > 0).length < 2 ? (
+          <div className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:bg-white/5 dark:text-gray-400">
+            Keep logging across more days — your weekly pattern shows up here.
+          </div>
+        ) : (
+          <>
+            <div className="flex items-end gap-2" style={{ height: 120 }}>
+              {heat.avg.map((v, i) => {
+                const h = heat.max > 0 ? (v / heat.max) * 100 : 0;
+                const isMax = v > 0 && v === heat.max;
+                return (
+                  <div key={i} title={`${heat.labels[i]}: ${formatMoney(v, symbol)} avg`}
+                    className="flex h-full flex-1 flex-col items-center justify-end">
+                    {isMax && <span className="mb-1 font-mono text-[10px] text-gray-400">{formatMoney(v, symbol)}</span>}
+                    <div className="w-full rounded-md transition-all duration-500" style={{
+                      height: `${v > 0 ? Math.max(h, 8) : 4}%`,
+                      backgroundColor: v > 0 ? (isMax ? "#F59E0B" : "#5B8C5A") : "rgba(148,163,184,0.22)",
+                    }} />
+                    <span className="mt-1.5 text-[11px] font-medium text-gray-400">{heat.labels[i]}</span>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
-        <p className="mt-2 font-mono text-xs text-gray-400">avg spend per weekday · last 4 weeks</p>
+            <p className="mt-2 font-mono text-xs text-gray-400">avg per weekday · last 4 weeks</p>
+          </>
+        )}
       </section>
 
       {/* Spending over time */}
