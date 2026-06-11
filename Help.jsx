@@ -147,6 +147,29 @@ export default function Help() {
         </p>
       </Topic>
 
+      <Topic id="privacy" title="Your money & data" hint="What we can see, and how it's kept safe" {...props}>
+        <p>
+          <b>budge· can't touch your money.</b> It isn't linked to any bank, card, or e-wallet —
+          every amount is something you type in yourself. There's no account to move money out of,
+          so even we can't.
+        </p>
+        <p>
+          <b>We don't know who you are.</b> No name, email, or password — your account is just a
+          random private key stored on your device. We don't collect contact details or sell your
+          data, and there are no ads or cross-app tracking.
+        </p>
+        <p>
+          <b>How it's stored.</b> Your connection is encrypted in transit (HTTPS/TLS) between your
+          phone and the database, and the data sits on a managed database that encrypts it at rest.
+          Entries can only be read or written by a request carrying your key.
+        </p>
+        <p className="text-gray-500 dark:text-gray-400">
+          To be straight with you: your data isn't end-to-end encrypted, so treat budge· as a
+          personal spending log rather than a vault. Your key is what protects it — keep it private,
+          and remember there's no password reset.
+        </p>
+      </Topic>
+
       <Topic id="account" title="Account, sync & offline" hint="Your key, the cloud, and going offline" {...props}>
         <p>
           There's no email or password — your account is a private <b>key</b> (Settings → Your
