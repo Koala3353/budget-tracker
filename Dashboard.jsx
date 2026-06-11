@@ -333,7 +333,9 @@ export default function Dashboard({
                 );
               })}
             </div>
-            <p className="mt-2 font-mono text-xs text-gray-400">avg per weekday · last 4 weeks</p>
+            <p className="mt-2 font-mono text-xs text-gray-400">
+              avg per weekday · {heat.weeks <= 1 ? "1 week" : `last ${heat.weeks} weeks`} of data
+            </p>
           </>
         )}
       </section>

@@ -2,7 +2,19 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import BottomNav from "./BottomNav.jsx";
 import Welcome from "./Welcome.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS } from "./seed.js";
-import { genHash, getStoredHash, storeHash, loadBudget, saveBudget } from "./store.js";
+import {
+  genHash,
+  getStoredHash,
+  storeHash,
+  loadBudget,
+  saveBudget,
+  readCache,
+  writeCache,
+  clearCache,
+  setPending,
+  isPending,
+  mergeBlobs,
+} from "./store.js";
 
 // Code-split the signed-in app away from the login path. A first-time visitor
 // (no stored key) only downloads React + the Welcome screen, so initial paint
@@ -56,6 +68,19 @@ export default function App() {
   const [weekSpendDays, setWeekSpendDays] = useState({});
 
   const loadedRef = useRef(false);
+  const cachePartialRef = useRef(false);
+
+  function buildBlob() {
+    return {
+      version: 4,
+      updatedAt: Date.now(),
+      categories,
+      settings,
+      transactions,
+      weekOverrides,
+      weekSpendDays,
+    };
+  }
 
   function applyState(data) {
     setCategories(data.categories || DEFAULT_CATEGORIES);
@@ -65,27 +90,46 @@ export default function App() {
     setWeekSpendDays(data.weekSpendDays || {});
   }
 
-  // Load an existing account, or create it on first sign-in/new-account.
+  // Load an account: show the local cache instantly (works offline), then
+  // reconcile with the server. Unsynced offline edits are merged, not lost.
   async function hydrate(h, { createIfMissing }) {
     loadedRef.current = false;
-    setStatus("loading");
+
+    // 1) Instant paint from cache if we have it — no network needed.
+    const cached = readCache(h);
+    if (cached?.blob?.categories) {
+      applyState(cached.blob);
+      cachePartialRef.current = cached.partial;
+      setStatus("ready");
+      setSync(isPending(h) ? "error" : "saved");
+    } else {
+      setStatus("loading");
+    }
+
+    // 2) Reconcile with Supabase.
     try {
-      const data = await loadBudget(h);
-      if (data && data.categories) {
-        applyState(data);
-      } else if (createIfMissing) {
-        const init = {
-          categories: DEFAULT_CATEGORIES,
-          settings: DEFAULT_SETTINGS,
-          transactions: [],
-          weekOverrides: {},
-          weekSpendDays: {},
-        };
-        applyState(init);
-        await saveBudget(h, { version: 4, ...init });
+      const remote = await loadBudget(h);
+      if (remote && remote.categories) {
+        if (cached?.blob && isPending(h)) {
+          // We had offline edits — union them with the server copy so nothing
+          // is lost, then push the merged result back.
+          const merged = mergeBlobs(remote, cached.blob);
+          applyState(merged);
+          cachePartialRef.current = false;
+          writeCache(h, merged);
+          await saveBudget(h, merged);
+          setPending(h, false);
+        } else {
+          applyState(remote);
+          cachePartialRef.current = false;
+          writeCache(h, remote);
+          setPending(h, false);
+        }
       } else {
-        // Signed in with a key that has no data yet — start it as a fresh account.
+        // No server data yet (new key / new account) — seed it.
         const init = {
+          version: 4,
+          updatedAt: Date.now(),
           categories: DEFAULT_CATEGORIES,
           settings: DEFAULT_SETTINGS,
           transactions: [],
@@ -93,14 +137,25 @@ export default function App() {
           weekSpendDays: {},
         };
         applyState(init);
-        await saveBudget(h, { version: 4, ...init });
+        cachePartialRef.current = false;
+        writeCache(h, init);
+        await saveBudget(h, init);
+        setPending(h, false);
       }
       loadedRef.current = true;
       setStatus("ready");
       setSync("saved");
     } catch (e) {
-      console.error(e);
-      setStatus("error");
+      // Offline or server error. If the cache already painted, stay on it and
+      // mark unsynced; otherwise we have nothing to show.
+      if (cached?.blob?.categories) {
+        loadedRef.current = true;
+        setStatus("ready");
+        setSync("error");
+      } else {
+        console.error(e);
+        setStatus("error");
+      }
     }
   }
 
@@ -122,28 +177,57 @@ export default function App() {
     if (status === "auth") prefetchScreens();
   }, [status]);
 
-  // Debounced sync to Supabase on any data change (after load).
+  // On any data change: write through to the local cache immediately (durable,
+  // offline-safe), then debounce a sync to Supabase. If the sync fails we stay
+  // "pending" and flush on reconnect.
   useEffect(() => {
     if (!loadedRef.current || !hash) return;
+    const blob = buildBlob();
+    writeCache(hash, blob);
+    setPending(hash, true);
     setSync("saving");
     const t = setTimeout(async () => {
       try {
-        await saveBudget(hash, {
-          version: 4,
-          categories,
-          settings,
-          transactions,
-          weekOverrides,
-          weekSpendDays,
-        });
+        await saveBudget(hash, blob);
+        setPending(hash, false);
+        cachePartialRef.current = false;
         setSync("saved");
       } catch (e) {
-        console.error(e);
-        setSync("error");
+        setSync("error"); // keep pending — the reconnect handler will retry
       }
     }, 600);
     return () => clearTimeout(t);
   }, [categories, settings, transactions, weekOverrides, weekSpendDays, hash]);
+
+  // When the device comes back online, flush any pending offline edits.
+  useEffect(() => {
+    async function flush() {
+      if (!hash || !isPending(hash)) return;
+      const cached = readCache(hash);
+      if (!cached?.blob) return;
+      setSync("saving");
+      try {
+        let toSave = cached.blob;
+        // If the cache was ever trimmed, reconcile with the server first so we
+        // can't overwrite older (already-synced) transactions.
+        if (cachePartialRef.current || cached.partial) {
+          const remote = await loadBudget(hash);
+          toSave = mergeBlobs(remote, cached.blob);
+          applyState(toSave);
+          cachePartialRef.current = false;
+          writeCache(hash, toSave);
+        }
+        await saveBudget(hash, toSave);
+        setPending(hash, false);
+        setSync("saved");
+      } catch (e) {
+        setSync("error");
+      }
+    }
+    window.addEventListener("online", flush);
+    return () => window.removeEventListener("online", flush);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hash]);
 
   // --- Auth actions ---
   async function signIn(rawHash) {
@@ -165,6 +249,7 @@ export default function App() {
   }
   function signOut() {
     try {
+      if (hash) clearCache(hash);
       localStorage.removeItem("budget.hash");
     } catch {
       /* ignore */

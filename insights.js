@@ -80,25 +80,37 @@ export function noSpendDays(transactions, settings, now = Date.now()) {
   return count;
 }
 
-/** Average spend per weekday over the last `weeks` weeks. */
+/**
+ * Average spend per weekday over the weeks you've actually been using the app
+ * (up to the last `weeks` weeks). A weekday slot only counts toward its average
+ * if that day falls on/after your first-ever transaction and on/before today —
+ * so calendar weeks before you started logging don't dilute the average with
+ * fake ₱0 days. A real no-spend day inside your active range still counts as 0.
+ */
 export function dowHeatmap(transactions, settings, now = Date.now(), weeks = 4) {
   const wsd = settings.weekStartDay;
   const totals = Array(7).fill(0);
   const counts = Array(7).fill(0);
   const cur = getWeekRange(now, wsd);
+  const earliest = transactions.length ? Math.min(...transactions.map((t) => t.ts)) : now;
+  const firstDay = startOfDay(earliest);
+  const weeksWithData = new Set();
   for (let w = 0; w < weeks; w++) {
     const r = getWeekRange(cur.start - w * 7 * DAY, wsd);
+    if (r.end <= firstDay) continue; // whole week predates any data
     for (let off = 0; off < 7; off++) {
       const ds = r.start + off * DAY;
-      if (ds > now) continue;
+      if (ds > now) continue; // hasn't happened yet
+      if (ds + DAY <= firstDay) continue; // before your first log
       totals[off] += sum(transactions.filter((t) => t.ts >= ds && t.ts < ds + DAY));
       counts[off] += 1;
+      weeksWithData.add(r.start);
     }
   }
   const avg = totals.map((v, i) => (counts[i] ? Math.round(v / counts[i]) : 0));
   const names = ["S", "M", "T", "W", "T", "F", "S"];
   const labels = Array.from({ length: 7 }, (_, off) => names[(wsd + off) % 7]);
-  return { avg, labels, max: Math.max(1, ...avg) };
+  return { avg, labels, max: Math.max(1, ...avg), weeks: weeksWithData.size };
 }
 
 /** Top category this week vs its average over the previous `weeks` weeks. */
