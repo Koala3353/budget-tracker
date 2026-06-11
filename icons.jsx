@@ -49,3 +49,13 @@ export function ChartIcon({ size = 24 }) {
     </svg>
   );
 }
+
+export function HelpIcon({ size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}

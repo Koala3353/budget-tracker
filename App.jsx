@@ -24,16 +24,19 @@ const importQuickAdd = () => import("./QuickAdd.jsx");
 const importDashboard = () => import("./Dashboard.jsx");
 const importHistory = () => import("./History.jsx");
 const importSettings = () => import("./Settings.jsx");
+const importHelp = () => import("./Help.jsx");
 const QuickAdd = lazy(importQuickAdd);
 const Dashboard = lazy(importDashboard);
 const History = lazy(importHistory);
 const Settings = lazy(importSettings);
+const Help = lazy(importHelp);
 
 function prefetchScreens() {
   importQuickAdd();
   importDashboard();
   importHistory();
   importSettings();
+  importHelp();
 }
 
 const Spinner = () => (
@@ -453,6 +456,7 @@ export default function App() {
             onImport={importData}
           />
         )}
+        {view === "help" && <Help />}
         </Suspense>
       </div>
 

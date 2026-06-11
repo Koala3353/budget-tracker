@@ -1,10 +1,12 @@
-import { HomeIcon, PlusIcon, ClockIcon, GearIcon } from "./icons.jsx";
+import { HomeIcon, PlusIcon, ClockIcon, GearIcon, HelpIcon } from "./icons.jsx";
 
+// Add sits dead-center, flanked by two tabs on each side.
 const TABS = [
   { key: "dashboard", label: "Dashboard", Icon: HomeIcon },
-  { key: "add", label: "Add", Icon: PlusIcon, emphasized: true },
   { key: "history", label: "History", Icon: ClockIcon },
+  { key: "add", label: "Add", Icon: PlusIcon, emphasized: true },
   { key: "settings", label: "Settings", Icon: GearIcon },
+  { key: "help", label: "Help", Icon: HelpIcon },
 ];
 
 /** Fixed bottom tab bar. The Add tab is visually emphasized (centered FAB-style). */
