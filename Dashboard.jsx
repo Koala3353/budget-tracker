@@ -13,10 +13,7 @@ import {
 } from "./budget.js";
 import {
   todaySpend,
-  paceInfo,
   lastWeekDelta,
-  projection,
-  avgDaily,
   biggest,
   monthTotal,
   noSpendDays,
@@ -105,10 +102,17 @@ export default function Dashboard({
 
   // --- insights ---
   const today = todaySpend(transactions, now);
-  const pace = paceInfo(transactions, settings, weekOverrides, now);
   const lwd = lastWeekDelta(transactions, settings, weekOverrides, now);
-  const proj = projection(transactions, settings, weekOverrides, now);
-  const avg = avgDaily(transactions, settings, now);
+
+  // Pacing stats are based on SPEND DAYS (the setting / per-week override),
+  // not the 7-day calendar week — so they line up with the daily limit.
+  const spendDaysUsed = Math.min(spendDays, Math.max(1, spendDays - spendDaysLeft + 1));
+  const avg = Math.round(spent / spendDaysUsed);
+  const projectedTotal = Math.round((spent * spendDays) / spendDaysUsed);
+  const projOver = projectedTotal - allowance;
+  const expectedByNow = Math.round((allowance * spendDaysUsed) / spendDays);
+  const paceDiff = expectedByNow - spent; // > 0 = under pace
+
   const big = biggest(weekTx);
   const month = monthTotal(transactions, now);
   const noSpend = noSpendDays(transactions, settings, now);
@@ -130,9 +134,9 @@ export default function Dashboard({
   const [daysDraft, setDaysDraft] = useState(spendDays);
   const [hideNudge, setHideNudge] = useState(false);
 
-  const paceText = pace.diff >= 0
-    ? `${formatMoney(pace.diff, symbol)} under pace`
-    : `${formatMoney(-pace.diff, symbol)} over pace`;
+  const paceText = paceDiff >= 0
+    ? `${formatMoney(paceDiff, symbol)} under pace`
+    : `${formatMoney(-paceDiff, symbol)} over pace`;
   const deltaText = lwd.hasPrev
     ? `${lwd.delta <= 0 ? "↓" : "↑"} ${formatMoney(Math.abs(lwd.delta), symbol)} vs last week`
     : "first week";
@@ -252,7 +256,7 @@ export default function Dashboard({
                 Today <span className="font-mono font-semibold text-gray-900 dark:text-gray-50">{formatMoney(today, symbol)}</span>
               </span>
               {!isOver && (
-                <span className="font-medium" style={{ color: pace.diff >= 0 ? "#5B8C5A" : "#F59E0B" }}>{paceText}</span>
+                <span className="font-medium" style={{ color: paceDiff >= 0 ? "#5B8C5A" : "#F59E0B" }}>{paceText}</span>
               )}
             </div>
           </div>
@@ -265,10 +269,10 @@ export default function Dashboard({
           sub={`${pctSpent}% · ${deltaText}`} subColor={lwd.hasPrev && lwd.delta > 0 ? "#F59E0B" : "#9CA3AF"} />
         <Tile label="Spend days" value={`${spendDays} / wk`} sub={hasDaysOverride ? "this week" : "default"}
           action="Edit" onClick={() => { setDaysDraft(spendDays); setDaysOpen(true); }} />
-        <Tile label="Projected end" value={formatMoney(proj.projected, symbol)}
-          sub={proj.over > 0 ? `${formatMoney(proj.over, symbol)} over` : `${formatMoney(-proj.over, symbol)} under`}
-          subColor={proj.over > 0 ? "#EF4444" : "#5B8C5A"} />
-        <Tile label="Avg / day" value={formatMoney(avg, symbol)} sub="this week" />
+        <Tile label="Projected end" value={formatMoney(projectedTotal, symbol)}
+          sub={projOver > 0 ? `${formatMoney(projOver, symbol)} over` : `${formatMoney(-projOver, symbol)} under`}
+          subColor={projOver > 0 ? "#EF4444" : "#5B8C5A"} />
+        <Tile label="Avg / spend day" value={formatMoney(avg, symbol)} sub="this week" />
         <Tile label="This month" value={formatMoney(month, symbol)} sub="all weeks" />
         <Tile label="No-spend days" value={`${noSpend}`} sub="this week" />
         <Tile label="Saved so far" value={formatMoney(saved.total, symbol)}
