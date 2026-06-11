@@ -277,8 +277,8 @@ export default function App() {
   function deleteTransaction(tx) {
     setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
   }
-  function editTransaction() {
-    setView("add");
+  function updateTransaction(updated) {
+    setTransactions((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
   }
 
   // --- Categories ---
@@ -432,7 +432,7 @@ export default function App() {
             categories={categories}
             transactions={transactions}
             settings={settings}
-            onEdit={editTransaction}
+            onSave={updateTransaction}
             onDelete={deleteTransaction}
           />
         )}

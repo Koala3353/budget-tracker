@@ -18,7 +18,7 @@ function groupByDay(transactions) {
   return groups;
 }
 
-export default function History({ categories, transactions, settings, onEdit, onDelete }) {
+export default function History({ categories, transactions, settings, onSave, onDelete }) {
   const symbol = settings.currencySymbol;
   const [selected, setSelected] = useState(null);
   const catById = (id) => categories.find((c) => c.id === id);
@@ -84,20 +84,23 @@ export default function History({ categories, transactions, settings, onEdit, on
         </div>
       )}
 
-      <EditSheet
-        tx={selected}
-        category={selected ? catById(selected.categoryId) : null}
-        symbol={symbol}
-        onClose={() => setSelected(null)}
-        onEdit={(tx) => {
-          onEdit?.(tx);
-          setSelected(null);
-        }}
-        onDelete={(tx) => {
-          onDelete?.(tx);
-          setSelected(null);
-        }}
-      />
+      {selected && (
+        <EditSheet
+          key={selected.id}
+          tx={selected}
+          categories={categories}
+          symbol={symbol}
+          onClose={() => setSelected(null)}
+          onSave={(tx) => {
+            onSave?.(tx);
+            setSelected(null);
+          }}
+          onDelete={(tx) => {
+            onDelete?.(tx);
+            setSelected(null);
+          }}
+        />
+      )}
     </div>
   );
 }
